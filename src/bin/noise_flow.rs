@@ -1,8 +1,10 @@
 extern crate nalgebra as na;
 use clap::Parser;
+use indicatif::ProgressIterator;
 use na::Vector2;
 use noise::{NoiseFn, Simplex};
-use rand::{Rng, SeedableRng};
+use palette::{Gradient, LinSrgb};
+use rand::{distributions::Uniform, prelude::Distribution, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Stroke, Transform};
 
@@ -25,9 +27,36 @@ struct Args {
     #[arg(long)]
     seed: Option<u64>,
 
+    #[arg(long, default_value_t = 0.4)]
+    bias_x: f64,
+
+    #[arg(long, default_value_t = 0.3)]
+    bias_y: f64,
+
     /// noise scale
     #[arg(long, default_value_t = 100.)]
     scale: f64,
+
+    #[arg(long, default_value_t = false)]
+    draw_flow_tails: bool,
+
+    #[arg(long, default_value_t = true)]
+    draw_flow_walks: bool,
+
+    #[arg(long, default_value_t = 2000)]
+    flow_walk_n: u32,
+
+    #[arg(long, default_value_t = 1000)]
+    flow_walk_steps: u32,
+
+    #[arg(long, default_value_t = 4.)]
+    flow_walk_step_size: f64,
+
+    #[arg(long, default_value_t = 10.)]
+    color_scale: f64,
+
+    #[arg(long, default_value_t = 48.)]
+    color_range: f64,
 }
 
 struct Noise2x2 {
@@ -81,9 +110,12 @@ pub fn main() {
     let mut flow_noise = Noise2x2::new(&mut rng);
     flow_noise.pos_scale = args.scale;
     flow_noise.normalize = true;
+    // todo: args
+    flow_noise.bias = Vector2::new(0.4, 0.4);
 
     // draw flow tails
-    {
+    // todo: arg gate
+    if args.draw_flow_tails {
         // tail grid parameters
         let stride: f64 = 32.;
         let tail_len: f64 = 16.;
@@ -97,6 +129,7 @@ pub fn main() {
         let mut stroke = Stroke::default();
         stroke.width = 1.0;
 
+        // draw flow tails
         let mut draw_tail = |pos: Vector2<f64>, dir: Vector2<f64>| {
             // source circle
             let p_circle =
@@ -123,8 +156,79 @@ pub fn main() {
                 draw_tail(pos, dir);
             }
         }
-
-        // save result
-        pixmap.save_png(args.out).unwrap();
     }
+
+    // draw flow walks
+    // todo: arg gate
+    if args.draw_flow_walks {
+        let n_walks = args.flow_walk_n;
+        let walk_steps = args.flow_walk_steps;
+        let step_size = args.flow_walk_step_size;
+
+        let gradient = Gradient::new(vec![
+            LinSrgb::new(0.00, 0.05, 0.20),
+            LinSrgb::new(0.70, 0.10, 0.20),
+            LinSrgb::new(0.95, 0.90, 0.30),
+        ]);
+
+        let taken_colors: Vec<_> = gradient.take(10).collect();
+        let color_noise = Simplex::new(rng.gen());
+
+        let mut paint = Paint::default();
+        paint.set_color_rgba8(0, 0, 0, 255);
+        paint.anti_alias = true;
+        let transform = Transform::identity();
+        let mut stroke = Stroke::default();
+        stroke.width = 2.0;
+
+        let mut draw_walk = |pos: &Vector2<f64>, color: Color| {
+            // path
+            let mut pb = PathBuilder::new();
+            pb.move_to(pos.x as f32, pos.y as f32);
+            // cursor
+            let mut x = *pos;
+            for _i in 0..walk_steps {
+                let mut dx = flow_noise.sample(&x);
+                let x2 = x + dx * step_size;
+                dx = flow_noise.sample(&x2);
+                let x3 = x2 + dx * step_size;
+                dx = flow_noise.sample(&x3);
+                let x4 = x3 + dx * step_size;
+                pb.cubic_to(
+                    x2.x as f32,
+                    x2.y as f32,
+                    x3.x as f32,
+                    x3.y as f32,
+                    x4.x as f32,
+                    x4.y as f32,
+                );
+                x = x4;
+            }
+            let path = pb.finish().unwrap();
+            paint.set_color(color);
+            pixmap.stroke_path(&path, &paint, &stroke, transform, None)
+        };
+
+        let x_range = Uniform::new(0., args.width as f64);
+        let y_range = Uniform::new(0., args.height as f64);
+        // let color_range = Uniform::new(0, 10);
+        for _i in (0..n_walks).progress() {
+            let p = Vector2::new(x_range.sample(&mut rng), y_range.sample(&mut rng));
+            let color_scale = args.scale * args.color_scale;
+            let color_range = args.color_range;
+            let color_i = ((color_noise.get([p.x / color_scale, p.y / color_scale]) * color_range)
+                as usize)
+                .clamp(0, 9);
+            // println!("color_i: {}", color_i);
+            let color = taken_colors[color_i];
+            let r = (color.red * 255.) as u8;
+            let g = (color.green * 255.) as u8;
+            let b = (color.blue * 255.) as u8;
+            let skia_color: Color = Color::from_rgba8(r, g, b, 255);
+            draw_walk(&p, skia_color);
+        }
+    }
+
+    // save result
+    pixmap.save_png(args.out).unwrap();
 }
