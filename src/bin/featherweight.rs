@@ -10,7 +10,7 @@ use rand_chacha::ChaCha8Rng;
 #[command(author, version, about, long_about=None)]
 struct Args {
     /// output path
-    #[arg(short, long, default_value_t = String::from("perlin_flow.png"))]
+    #[arg(short, long, default_value_t = String::from("featherweight.png"))]
     out: String,
 
     #[arg(long, default_value_t = 1024)]

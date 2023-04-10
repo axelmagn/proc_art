@@ -12,7 +12,7 @@ use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Stroke, Transform};
 #[command(author, version, about, long_about=None)]
 struct Args {
     /// output path
-    #[arg(short, long, default_value_t = String::from("noise_flow.png"))]
+    #[arg(short, long, default_value_t = String::from("branches_aflame.png"))]
     out: String,
 
     /// image width
@@ -216,6 +216,9 @@ pub fn main() {
             let p = Vector2::new(x_range.sample(&mut rng), y_range.sample(&mut rng));
             let color_scale = args.scale * args.color_scale;
             let color_range = args.color_range;
+            // let color_i = (((color_noise.get([p.x / color_scale, p.y / color_scale]) + 1.) / 2.
+            //     * color_range) as usize)
+            //     .clamp(0, 9);
             let color_i = ((color_noise.get([p.x / color_scale, p.y / color_scale]) * color_range)
                 as usize)
                 .clamp(0, 9);
