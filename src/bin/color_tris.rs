@@ -4,12 +4,11 @@ use std::f32::consts::PI;
 
 use bevy::{
     prelude::{
-        default, shape, App, Assets, Camera2dBundle, Color, Commands, Image, Mesh, Quat, Query,
-        Res, ResMut, Transform,
+        default, shape, App, Assets, Camera2dBundle, Color, Commands, Mesh, Quat, Query, ResMut,
+        Transform,
     },
-    render::render_resource::TextureFormat,
-    sprite::{ColorMaterial, MaterialMesh2dBundle, SpriteBundle},
-    window::{Window, WindowResolution},
+    sprite::{ColorMaterial, MaterialMesh2dBundle},
+    window::Window,
     DefaultPlugins,
 };
 use rand::{distributions::Uniform, prelude::Distribution, SeedableRng};
