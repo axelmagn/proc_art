@@ -1,12 +1,13 @@
 //! draw a grid of triangles, with colors derived from a noise function
 
-use std::num::ParseIntError;
+use std::{fs, num::ParseIntError};
 
 use clap::Parser;
-use rand::{distributions::Uniform, prelude::Distribution, thread_rng};
+use noise::{NoiseFn, Simplex, Worley};
+use rand::{distributions::Uniform, prelude::Distribution, thread_rng, Rng, RngCore};
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Point, Transform};
 
-const DEFAULT_PALETTE: &'static str = include_str!("../assets/colors/golden-haze.hex");
+const DEFAULT_PALETTE: &'static str = include_str!("../../assets/colors/golden-haze.hex");
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -30,23 +31,24 @@ struct Args {
     palette_file: Option<String>,
 }
 
-struct ArtSpec {
-    triangle_side: f32,
-    palette: Vec<Color>,
+impl Args {
+    fn load_palette(&self) -> Result<Vec<Color>, ParseHexColorError> {
+        let contents = match &self.palette_file {
+            Some(path) => fs::read_to_string(path).expect("could not read palette file"),
+            None => String::from(DEFAULT_PALETTE),
+        };
+        parse_hex_palette(&contents)
+    }
+
+    fn get_height_fn<R: Rng>(&self, rng: &mut R) -> Box<dyn NoiseFn<f64, 2>> {
+        // TODO: parameterize
+        Box::new(Simplex::new(rng.gen()))
+    }
 }
 
 fn main() {
     let args = Args::parse();
-    let spec = ArtSpec {
-        triangle_side: args.triangle_size,
-        palette: args
-            .palette_file
-            .or(Some(String::from(DEFAULT_PALETTE)))
-            .map(|s| parse_hex_palette(&s))
-            .unwrap()
-            .unwrap(),
-    };
-    let pixmap = paint_main(&spec);
+    let pixmap = paint_main(&args);
     pixmap.save_png(args.out).unwrap();
 }
 
@@ -54,14 +56,25 @@ fn main() {
 
 // impl PaintTask {}
 
-fn paint_main(spec: &ArtSpec) -> Pixmap {
-    let triangle_side = spec.triangle_side;
+struct NoiseData {
+    // TODO: flow
+    // flow_x: Box<dyn NoiseFn<f32, 2>>,
+    // flow_y: Box<dyn NoiseFn<f32, 2>>,
+    height: Box<dyn NoiseFn<f64, 2>>,
+}
+
+fn paint_main(args: &Args) -> Pixmap {
+    let triangle_side = args.triangle_size;
     let triangle_half_side = triangle_side / 2.;
     let triangle_height = triangle_side * (60_f32).to_radians().sin();
-    let palette = &spec.palette;
+    let triangle_half_height = triangle_height / 2.;
+    let palette = args.load_palette().expect("could not load palette");
 
     let mut rng = thread_rng();
     let color_range = Uniform::new(0, palette.len());
+    let noise_data = NoiseData {
+        height: args.get_height_fn(&mut rng),
+    };
 
     let mut pixmap = Pixmap::new(800, 600).unwrap();
 
@@ -69,18 +82,29 @@ fn paint_main(spec: &ArtSpec) -> Pixmap {
     let j_max = (600. / triangle_height) as u32 + 1;
     for i in 0..i_max {
         for j in 0..j_max {
-            let x = i as f32 * triangle_side;
+            let mut x = i as f32 * triangle_side;
+            if j % 2 == 0 {
+                x -= triangle_half_side;
+            }
             let y = j as f32 * triangle_height;
             let pos = Point::from_xy(x, y);
 
             let mut paint = Paint::default();
             paint.anti_alias = true;
 
-            let color = palette[color_range.sample(&mut rng)];
+            let sample_x = (x + triangle_half_side) as f64;
+            let sample_y = (y + triangle_half_height) as f64;
+            let height =
+                (noise_data.height.get([sample_x, sample_y]) + 1.) / 2. * palette.len() as f64;
+            let color = palette[height as usize];
             paint.set_color(color);
             draw_top_triangle(pos, triangle_side, &paint, &mut pixmap);
 
-            let color = palette[color_range.sample(&mut rng)];
+            let sample_x = x as f64;
+            let sample_y = (y + triangle_half_height) as f64;
+            let height =
+                (noise_data.height.get([sample_x, sample_y]) + 1.) / 2. * palette.len() as f64;
+            let color = palette[height as usize];
             paint.set_color(color);
             draw_bottom_triangle(pos, triangle_side, &paint, &mut pixmap);
         }
