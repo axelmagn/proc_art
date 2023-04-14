@@ -13,7 +13,7 @@ use bevy::{
 use image::{DynamicImage, RgbaImage};
 use indicatif::ProgressIterator;
 use noise::{NoiseFn, Perlin, ScalePoint};
-use palette::{encoding::Linear, rgb::Rgb, Gradient, LinSrgb, Srgb};
+use palette::{Gradient, LinSrgb};
 use rand::{distributions::Uniform, thread_rng, Rng};
 use tiny_skia::{
     Color as SkiaColor, FillRule, Paint, PathBuilder, Pixmap, PremultipliedColorU8,
@@ -133,12 +133,29 @@ fn paint_noise<R: Rng>(width: u32, height: u32, rng: &mut R) -> Pixmap {
     let mut pixmap = Pixmap::new(width, height).unwrap();
     let pixels = pixmap.pixels_mut();
 
+    let colors: Vec<_> = (0..5)
+        .map(|i| {
+            let range = Uniform::new(0., 1. / 5. * (i + 1) as f64);
+            let r = rng.sample(range);
+            let g = rng.sample(range);
+            let b = rng.sample(range);
+            LinSrgb::new(r, g, b)
+        })
+        .collect();
+    let gradient = Gradient::new(colors);
+
     for i in (0..(width * height)).progress() {
         let x = i % width;
         let y = i / width;
-        let v = noise.get([x as f64, y as f64]);
-        let rgb = ((v + 1.) / 2. * 256.).clamp(0., 255.) as u8;
-        pixels[i as usize] = PremultipliedColorU8::from_rgba(rgb, rgb, rgb, 255).unwrap();
+        let v = ((noise.get([x as f64, y as f64]) + 1.) / 2.).clamp(0., 1.);
+        let color = gradient.get(v);
+        pixels[i as usize] = PremultipliedColorU8::from_rgba(
+            (color.red * 255.) as u8,
+            (color.green * 255.) as u8,
+            (color.blue * 255.) as u8,
+            255,
+        )
+        .unwrap();
     }
     pixmap
 }
