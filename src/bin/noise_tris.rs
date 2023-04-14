@@ -3,11 +3,11 @@
 use std::{fs, num::ParseIntError};
 
 use clap::Parser;
-use noise::{NoiseFn, Simplex, Worley};
-use rand::{distributions::Uniform, prelude::Distribution, thread_rng, Rng, RngCore};
+use noise::{NoiseFn, ScalePoint, Simplex};
+use rand::{thread_rng, Rng};
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Point, Transform};
 
-const DEFAULT_PALETTE: &'static str = include_str!("../../assets/colors/golden-haze.hex");
+const DEFAULT_PALETTE: &'static str = include_str!("../../assets/colors/ocaso.hex");
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -29,6 +29,9 @@ struct Args {
 
     #[arg(long)]
     palette_file: Option<String>,
+
+    #[arg(long, default_value_t = 1.)]
+    noise_scale: f64,
 }
 
 impl Args {
@@ -42,7 +45,9 @@ impl Args {
 
     fn get_height_fn<R: Rng>(&self, rng: &mut R) -> Box<dyn NoiseFn<f64, 2>> {
         // TODO: parameterize
-        Box::new(Simplex::new(rng.gen()))
+        let noise = Simplex::new(rng.gen());
+        let noise = ScalePoint::new(noise).set_scale(self.noise_scale);
+        Box::new(noise)
     }
 }
 
@@ -71,15 +76,14 @@ fn paint_main(args: &Args) -> Pixmap {
     let palette = args.load_palette().expect("could not load palette");
 
     let mut rng = thread_rng();
-    let color_range = Uniform::new(0, palette.len());
     let noise_data = NoiseData {
         height: args.get_height_fn(&mut rng),
     };
 
-    let mut pixmap = Pixmap::new(800, 600).unwrap();
+    let mut pixmap = Pixmap::new(args.width, args.height).unwrap();
 
-    let i_max = (800. / triangle_side) as u32 + 1;
-    let j_max = (600. / triangle_height) as u32 + 1;
+    let i_max = (args.width as f32 / triangle_side) as u32 + 3;
+    let j_max = (args.height as f32 / triangle_height) as u32 + 3;
     for i in 0..i_max {
         for j in 0..j_max {
             let mut x = i as f32 * triangle_side;
