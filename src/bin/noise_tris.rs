@@ -2,8 +2,8 @@
 
 use std::{fs, num::ParseIntError};
 
-use clap::Parser;
-use noise::{NoiseFn, ScalePoint, Simplex};
+use clap::{Parser, ValueEnum};
+use noise::{NoiseFn, Perlin, ScalePoint, Simplex};
 use rand::{thread_rng, Rng};
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Point, Transform};
 
@@ -30,8 +30,21 @@ struct Args {
     #[arg(long)]
     palette_file: Option<String>,
 
+    #[arg(long, value_enum, default_value_t = NoiseType::Simplex)]
+    noise_type: NoiseType,
+
     #[arg(long, default_value_t = 1.)]
     noise_scale: f64,
+
+    /// normalize noise scale to size of image
+    #[arg(long)]
+    noise_norm: bool,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+enum NoiseType {
+    Simplex,
+    Perlin,
 }
 
 impl Args {
@@ -43,10 +56,16 @@ impl Args {
         parse_hex_palette(&contents)
     }
 
-    fn get_height_fn<R: Rng>(&self, rng: &mut R) -> Box<dyn NoiseFn<f64, 2>> {
-        // TODO: parameterize
-        let noise = Simplex::new(rng.gen());
-        let noise = ScalePoint::new(noise).set_scale(self.noise_scale);
+    fn get_height_fn(&self, seed: u32) -> Box<dyn NoiseFn<f64, 2>> {
+        let noise: Box<dyn NoiseFn<f64, 2>> = match self.noise_type {
+            NoiseType::Perlin => Box::new(Perlin::new(seed)),
+            NoiseType::Simplex => Box::new(Simplex::new(seed)),
+        };
+        let mut scale = self.noise_scale;
+        if self.noise_norm {
+            scale /= self.width.max(self.height) as f64;
+        }
+        let noise = ScalePoint::new(noise).set_scale(scale);
         Box::new(noise)
     }
 }
@@ -77,7 +96,7 @@ fn paint_main(args: &Args) -> Pixmap {
 
     let mut rng = thread_rng();
     let noise_data = NoiseData {
-        height: args.get_height_fn(&mut rng),
+        height: args.get_height_fn(rng.gen()),
     };
 
     let mut pixmap = Pixmap::new(args.width, args.height).unwrap();
@@ -98,16 +117,16 @@ fn paint_main(args: &Args) -> Pixmap {
 
             let sample_x = (x + triangle_half_side) as f64;
             let sample_y = (y + triangle_half_height) as f64;
-            let height =
-                (noise_data.height.get([sample_x, sample_y]) + 1.) / 2. * palette.len() as f64;
+            let height = (noise_data.height.get([sample_x, sample_y]) + 1.) / 2.
+                * (palette.len() - 1) as f64;
             let color = palette[height as usize];
             paint.set_color(color);
             draw_top_triangle(pos, triangle_side, &paint, &mut pixmap);
 
             let sample_x = x as f64;
             let sample_y = (y + triangle_half_height) as f64;
-            let height =
-                (noise_data.height.get([sample_x, sample_y]) + 1.) / 2. * palette.len() as f64;
+            let height = (noise_data.height.get([sample_x, sample_y]) + 1.) / 2.
+                * (palette.len() - 1) as f64;
             let color = palette[height as usize];
             paint.set_color(color);
             draw_bottom_triangle(pos, triangle_side, &paint, &mut pixmap);
