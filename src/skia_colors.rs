@@ -4,6 +4,8 @@ use std::num::ParseIntError;
 
 use tiny_skia::Color;
 
+const DEFAULT_PALETTE: &'static str = include_str!("../assets/colors/ocaso.hex");
+
 #[derive(Debug, PartialEq)]
 pub enum ParseHexColorError {
     WrongColorStringLength {
@@ -39,6 +41,10 @@ pub fn parse_hex_color(s: &str) -> Result<Color, ParseHexColorError> {
     Ok(Color::from_rgba8(r, g, b, 255))
 }
 
+pub fn get_default_palette() -> Vec<Color> {
+    parse_hex_palette(DEFAULT_PALETTE).unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -72,5 +78,11 @@ ffffff";
             parse_hex_color("FF0000"),
             Ok(Color::from_rgba8(255, 0, 0, 255))
         );
+    }
+
+    #[test]
+    fn test_get_default_palette() {
+        let palette = get_default_palette();
+        assert!(palette.len() > 0);
     }
 }

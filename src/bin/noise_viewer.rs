@@ -1,5 +1,9 @@
 //! An interactive program that allows the user to view the output of a noise
 //! function in realtime. It is meant as a prototype for displaying a dynamically created image in bevy
+//!
+//! Controls
+//! --------
+//! Space: generate new random image
 
 use bevy::{
     prelude::{
@@ -10,33 +14,43 @@ use bevy::{
     window::Window,
     DefaultPlugins,
 };
+use clap::Parser;
 use image::{DynamicImage, RgbaImage};
 use indicatif::ProgressIterator;
 use noise::{NoiseFn, Perlin, ScalePoint};
 use palette::{Gradient, LinSrgb};
+use proc_art::noise::NoiseSelector;
 use rand::{distributions::Uniform, thread_rng, Rng};
 use tiny_skia::{
     Color as SkiaColor, FillRule, Paint, PathBuilder, Pixmap, PremultipliedColorU8,
     Transform as SkiaTransform,
 };
 
+#[derive(Parser, Resource, Debug)]
+#[command(author, version, about, long_about=None)]
+struct Args {
+    /// random seed
+    #[arg(long)]
+    seed: Option<u64>,
+
+    #[arg(long, value_enum, default_value_t = NoiseSelector::Perlin)]
+    noise_type: NoiseSelector,
+
+    /// noise scale
+    #[arg(long, default_value_t = 1.)]
+    noise_scale: f64,
+}
+
 #[derive(Resource, Default, Debug)]
 struct DisplayImage(Handle<Image>);
 
-#[derive(Resource, Debug)]
-struct NoiseScale(f64);
-
-impl Default for NoiseScale {
-    fn default() -> Self {
-        NoiseScale(1.)
-    }
-}
-
 fn main() {
+    let args = Args::parse();
+
     App::new()
         .add_plugins(DefaultPlugins)
+        .insert_resource(args)
         .init_resource::<DisplayImage>()
-        .init_resource::<NoiseScale>()
         .add_startup_system(setup)
         .add_system(update_display)
         .run();

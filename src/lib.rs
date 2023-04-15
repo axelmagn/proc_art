@@ -1,3 +1,4 @@
 extern crate nalgebra as na;
 
-pub mod colors;
+pub mod noise;
+pub mod skia_colors;
