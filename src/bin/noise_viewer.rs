@@ -17,8 +17,12 @@ use bevy::{
 use clap::Parser;
 use image::{DynamicImage, RgbaImage};
 use indicatif::ProgressIterator;
-use noise::{NoiseFn, Perlin, ScalePoint};
-use palette::{Gradient, LinSrgb};
+use noise::{NoiseFn, ScalePoint};
+use palette::{
+    encoding::{Linear, Srgb},
+    rgb::Rgb,
+    Gradient, LinSrgb,
+};
 use proc_art::noise::NoiseSelector;
 use rand::{distributions::Uniform, thread_rng, Rng};
 use tiny_skia::{
@@ -37,8 +41,22 @@ struct Args {
     noise_type: NoiseSelector,
 
     /// noise scale
-    #[arg(long, default_value_t = 1.)]
+    #[arg(long, default_value_t = 4.)]
     noise_scale: f64,
+}
+
+impl Args {
+    fn get_scaled_noise(
+        &self,
+        seed: u32,
+        window_width: u32,
+        window_height: u32,
+    ) -> Box<dyn NoiseFn<f64, 2>> {
+        let noise_fn = self.noise_type.get_noise_2d(seed);
+        let scale = self.noise_scale / window_width.max(window_height) as f64;
+        let noise_fn = ScalePoint::new(noise_fn).set_scale(scale);
+        Box::new(noise_fn)
+    }
 }
 
 #[derive(Resource, Default, Debug)]
@@ -90,6 +108,7 @@ fn update_display(
     keys: Res<Input<KeyCode>>,
     mut images: ResMut<Assets<Image>>,
     display_img: Res<DisplayImage>,
+    args: Res<Args>,
     window: Query<&Window>,
 ) {
     if keys.just_pressed(KeyCode::Space) {
@@ -98,7 +117,21 @@ fn update_display(
         let mut rng = thread_rng();
         let window_w = window.single().resolution.width() as u32;
         let window_h = window.single().resolution.height() as u32;
-        let pixmap = paint_noise(window_w, window_h, &mut rng);
+        let noise_fn = args.get_scaled_noise(rng.gen(), window_w, window_h);
+
+        // TODO: read from palette files
+        let colors: Vec<_> = (0..5)
+            .map(|i| {
+                let range = Uniform::new(0., 1. / 5. * (i + 1) as f64);
+                let r = rng.sample(range);
+                let g = rng.sample(range);
+                let b = rng.sample(range);
+                LinSrgb::new(r, g, b)
+            })
+            .collect();
+
+        // let pixmap = paint_noise(window_w, window_h, &mut rng);
+        let pixmap = paint_noise(&noise_fn, &colors, window_w, window_h);
 
         let bvy_img = images.get_mut(&display_img.0).unwrap();
         let rgba = RgbaImage::from_raw(window_w, window_h, pixmap.data().into()).unwrap();
@@ -141,28 +174,22 @@ fn paint_circle_flag<R: Rng>(width: u32, height: u32, rng: &mut R) -> Pixmap {
     pixmap
 }
 
-fn paint_noise<R: Rng>(width: u32, height: u32, rng: &mut R) -> Pixmap {
-    let scale = 4. / width.max(height) as f64;
-    let noise = ScalePoint::new(Perlin::new(rng.gen())).set_scale(scale);
+fn paint_noise<N: NoiseFn<f64, 2>>(
+    noise_fn: &N,
+    colors: &Vec<Rgb<Linear<Srgb>, f64>>,
+    width: u32,
+    height: u32,
+) -> Pixmap {
     let mut pixmap = Pixmap::new(width, height).unwrap();
     let pixels = pixmap.pixels_mut();
-
-    let colors: Vec<_> = (0..5)
-        .map(|i| {
-            let range = Uniform::new(0., 1. / 5. * (i + 1) as f64);
-            let r = rng.sample(range);
-            let g = rng.sample(range);
-            let b = rng.sample(range);
-            LinSrgb::new(r, g, b)
-        })
-        .collect();
-    let gradient = Gradient::new(colors);
+    let gradient = Gradient::new(colors.clone());
 
     for i in (0..(width * height)).progress() {
         let x = i % width;
         let y = i / width;
-        let v = ((noise.get([x as f64, y as f64]) + 1.) / 2.).clamp(0., 1.);
+        let v = ((noise_fn.get([x as f64, y as f64]) + 1.) / 2.).clamp(0., 1.);
         let color = gradient.get(v);
+        // TODO: convert with convenience function
         pixels[i as usize] = PremultipliedColorU8::from_rgba(
             (color.red * 255.) as u8,
             (color.green * 255.) as u8,
