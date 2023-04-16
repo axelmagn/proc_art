@@ -10,6 +10,7 @@ bevy = "0.10.1"
 clap = {version = "4.2.1", features = ["derive"]}
 image = "0.24.6"
 indicatif = {version = "0.17.3", features = ["rayon"]}
+log = "0.4.17"
 nalgebra = "0.32.2"
 noise = "0.8.2"
 palette = "0.6.1"
